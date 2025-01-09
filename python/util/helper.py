@@ -105,11 +105,21 @@ def rp_area(rp: np.ndarray) -> int:
 def display_imgs(
     imgs: Union[np.ndarray, List[np.ndarray]],
     window_name="img",
+    frame_number=None,
+    window_size=(1280, 720),
 ):
     if type(imgs) == list:
         for i, img in enumerate(imgs):
+            cv2.namedWindow(f"window_name{i}", cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(f"window_name{i}", window_size[0], window_size[1])
+            if frame_number is not None:
+                cv2.putText(img, f"Frame {frame_number}", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 5, (0, 0, 255), 8)
             cv2.imshow(f"window_name{i}", img)
     else:
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(window_name, window_size[0], window_size[1])
+        if frame_number is not None:
+            cv2.putText(imgs, f"Frame {frame_number}", (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 5, (0, 0, 255), 8)
         cv2.imshow(window_name, imgs)
 
 

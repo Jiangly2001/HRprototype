@@ -10,7 +10,7 @@
 # import torch
 # import cv2
 #
-# sys.path.append(str(Path.home()) + '/detectron2')
+# sys.path.append(str(Path.home()) + '/detectron')
 #
 #
 # def visualize_par_process() -> None:

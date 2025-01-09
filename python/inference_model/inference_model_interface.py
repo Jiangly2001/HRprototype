@@ -14,6 +14,7 @@ class InferenceModelInterface(ABC):
     def __init__(self):
         self.app = self.create_model()
         self.predictions = None
+        self.attention_weights = None
 
     @abstractmethod
     def create_model(self):

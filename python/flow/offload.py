@@ -13,17 +13,16 @@ def send_frame(
     socket: Socket,
     frame: np.ndarray,
     frame_encoder: EncoderBase,
+    roi_param: Optional[Any] = None,
 ) -> None:
     """Encode a frame and send it to a remote socket."""
-    encoded_frame = frame_encoder.encode(
-        frame
-    )
+    if roi_param is None:
+        encoded_frame = frame_encoder.encode(frame)
+    else:
+        # Perform RoI encoding using roi_param
+        encoded_frame = frame_encoder.encode(frame, roi_param)
 
-    socket.send(
-        encoded_frame,
-        copy=False
-    )
-
+    socket.send(encoded_frame, copy=False)
     return None
 
 

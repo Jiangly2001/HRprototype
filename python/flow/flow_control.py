@@ -31,7 +31,15 @@ class FlowControl:
         self,
         config: Config = Config(),
         inference_model: InferenceModelInterface = InferenceModelTest()
-    ):
+    ) -> None:
+        """
+        Initialize the FlowControl class.
+
+        Args:
+            config (Config): configuration for the flow control.
+            inference_model (InferenceModelInterface): a machine learning model.
+
+        """
         self._config: Config = config
         self._rp_predictor: RPPredictor = RPPredictor(config)
         self._rp_partitioner: RPPartitioner = RPPartitioner(config)
@@ -87,10 +95,7 @@ class FlowControl:
                 color=(0, 255, 0),
             )
 
-            display_imgs(
-                frame_with_box_render,
-                "Elf internal process (prediction + partitioning)"
-            )
+            display_imgs(frame_with_box_render,"Elf internal process (prediction + partitioning)", self._flow_data.frame_count)
 
         # TODO: Update dynamic offloading
         #offloading_partitions: List[np.ndarray] = schedule_offloading(frame_partitions)

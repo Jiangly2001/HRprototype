@@ -29,6 +29,10 @@ class FlowData:
 
     _lrc_socket: Optional[Socket] = None
 
+    bandwidth_records: List[float] = field(default_factory=list)
+
+    last_encoding_size: Optional[int] = None
+
     inference_results: List[Any] = field(default_factory=list)
 
     offloading_tasks: List[concurrent.futures.Future] = field(default_factory=list)

@@ -9,22 +9,34 @@ from typing import List, Any
 import numpy as np
 import torch
 
+from detectron2.data.transforms import ResizeShortestEdge
 from inference_model import InferenceModelInterface
 
 # sys.path.append(str(Path.home()) + '/detectron')
 """This is the path to install the source code of detectron."""
 
-from detectron.demo.demo import maskrcnn_interface, render
+from detectron.demo.vit_setup import maskrcnn_interface, render
 """Please follow the instruction in REAMDE to add the API maskrcnn_interface under detectron/demo/demo.py."""
 
 
-class InferenceModelDetectron2(InferenceModelInterface):
+class ViTInferenceDetectron2(InferenceModelInterface):
     def create_model(self):
         self.app = maskrcnn_interface()
 
     def run(self, img: np.ndarray) -> Any:
-        self.predictions, _ = self.app.run_on_image(img)
-        return self.predictions
+        height, width = img.shape[:2]
+        aug = ResizeShortestEdge(short_edge_length=1024, max_size=1024)
+        image = aug.get_transform(img).apply_image(img)
+        image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
+        # image.to('cuda')
+        # with torch.no_grad():
+        #     self.predictions, self.attention_weights = self.app(image)
+        inputs = {"image": image, "height": height, "width": width}
+        # TODO: move the tensors to the CUDA device
+        with torch.no_grad():
+            # TODO:self.predictions, self.attention_weights = self.app([inputs])
+            self.predictions = self.app([inputs])
+        return self.predictions[0]
 
     @staticmethod
     def extract_rps(inference_result: Any) -> np.ndarray:

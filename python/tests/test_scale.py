@@ -1,7 +1,7 @@
 # import sys
 # from pathlib import Path
 #
-# sys.path.append(str(Path.home()) + '/detectron2')
+# sys.path.append(str(Path.home()) + '/detectron')
 #
 # from config import config
 # from inference_model import ClientModelInterface
