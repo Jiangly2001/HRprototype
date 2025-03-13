@@ -1,4 +1,7 @@
+import csv
 import random
+import time
+from datetime import datetime
 from typing import List, Any
 
 import numpy as np
@@ -55,25 +58,30 @@ class FlowControl:
         """If the flag is set True, it shows the received frame and frame partitions."""
         self.visualization_mode: bool = config.visualization_mode
 
+        self.csv_file = rf"F:\B\result\elf\processing_times.csv"
+
     def run(
         self,
-        frame: np.ndarray
+        frame: np.ndarray,
+        file_path: str,
     ) -> Any:
         """
         It takes a video frame as the input and returns the model inference result.
         :param frame: np.ndarray, an input video frame.
         :return: model inference result.
         """
+
+        start_time = time.time()
         self._register_new_frames(frame)
 
         if not self._rp_predictor.is_active():
-            self._run_cold_start(frame)
+            self._run_cold_start(frame, file_path)
             return self._flow_data.inference_results[0]
 
         """Warm up Elf flow starts."""
         if self._is_lrc_active():
             print("Run LRC flow")
-            self._submit_lrc_offloading()
+            self._submit_lrc_offloading(file_path)
             self._wait_offloading_finished()
 
         predicted_rps = self.rp_predictor.predict_rps()
@@ -85,6 +93,11 @@ class FlowControl:
 
         frame_partitions = [rp_partition.partition for rp_partition in rp_partitions]
         frame_offsets = [rp_partition.offset for rp_partition in rp_partitions]
+
+        end_time = time.time()
+        processing_time = end_time - start_time
+        print("Processing time: ", processing_time)
+        # self._save_processing_time_to_csv(file_path, processing_time)
 
         if self.visualization_mode:
             frame_with_box_render = render_bbox(predicted_rps.astype(int), self._flow_data.cur_frame)
@@ -100,7 +113,7 @@ class FlowControl:
         # TODO: Update dynamic offloading
         #offloading_partitions: List[np.ndarray] = schedule_offloading(frame_partitions)
 
-        self._submit_offloading_tasks(frame_partitions)
+        self._submit_offloading_tasks(frame_partitions, file_path)
 
         self._wait_offloading_finished()
 
@@ -145,7 +158,8 @@ class FlowControl:
 
     def _run_cold_start(
         self,
-        frame: np.ndarray
+        frame: np.ndarray,
+        file_path: str
     ) -> None:
         socket = get_random_socket(
             self._flow_data.sockets
@@ -155,6 +169,7 @@ class FlowControl:
             socket,
             frame,
             self._frame_encoder,
+            file_path,
         )
 
         inference_result = receive_inference_results(socket)
@@ -162,7 +177,7 @@ class FlowControl:
 
         self._update_inference_results()
 
-    def _submit_lrc_offloading(self):
+    def _submit_lrc_offloading(self, file_path: str):
         lrc_offloading_task = submit_offloading_tasks(
             frames=[
                 create_lrc_frame(
@@ -172,16 +187,18 @@ class FlowControl:
             ],
             frame_encoder=self._frame_encoder,
             sockets=[self._flow_data.lrc_socket],
-            executor=self._flow_data.executor
+            executor=self._flow_data.executor,
+            file_path=file_path,
         )
         self._flow_data.offloading_tasks += lrc_offloading_task
 
-    def _submit_offloading_tasks(self, offloading_partitions: List[np.ndarray]):
+    def _submit_offloading_tasks(self, offloading_partitions: List[np.ndarray], file_path: str):
         tasks = submit_offloading_tasks(
             frames=offloading_partitions,
             frame_encoder=self._frame_encoder,
             sockets=self._flow_data.sockets,
             executor=self._flow_data.executor,
+            file_path=file_path,
         )
         self._flow_data.offloading_tasks += tasks
 
@@ -275,6 +292,16 @@ class FlowControl:
         rp[:, 2] += offset[0]
         rp[:, 3] += offset[1]
         return rp
+
+    def _save_processing_time_to_csv(self, file_path: str, processing_time: float):
+        """
+        将处理时间和文件路径保存到 CSV 文件。
+        :param file_path: str, 当前帧的文件路径。
+        :param processing_time: float, 处理时间（秒）。
+        """
+        with open(self.csv_file, mode="a", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow([file_path, processing_time])
 
     @property
     def rp_partitioner(self) -> RPPartitioner:

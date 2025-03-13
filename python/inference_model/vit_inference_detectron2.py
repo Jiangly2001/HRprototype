@@ -34,9 +34,8 @@ class ViTInferenceDetectron2(InferenceModelInterface):
         inputs = {"image": image, "height": height, "width": width}
         # TODO: move the tensors to the CUDA device
         with torch.no_grad():
-            # TODO:self.predictions, self.attention_weights = self.app([inputs])
-            self.predictions = self.app([inputs])
-        return self.predictions[0]
+            self.predictions, attention_weights = self.app([inputs])
+        return self.predictions[0], attention_weights
 
     @staticmethod
     def extract_rps(inference_result: Any) -> np.ndarray:

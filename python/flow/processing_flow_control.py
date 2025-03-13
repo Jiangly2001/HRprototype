@@ -2,33 +2,31 @@ import os
 import random
 from typing import List, Any, Optional
 
+import cv2
 import numpy as np
 from sklearn.cluster import KMeans
-
+from canvas_packing import GrowingPacker
+from canvas_packing.util import sort_key
 from config import Config
 from flow.flow_data import FlowData
-from flow.lrc import create_lrc_frame, rescale_lrc_results
 from flow.offload import (
     send_frame,
-    submit_offloading_tasks,
-    wait_offload_finished,
-    collect_inference_results,
     receive_inference_results,
     get_random_socket,
 )
-from flow.offload_schedule import schedule_offloading
 from inference_model import InferenceModelTest, InferenceModelInterface
+from inference_model import ViTInferenceDetectron2
 from networking import EncoderPickle, EncoderBase, connect_sockets, close_sockets
-from projects.DensePose.densepose.converters import predictor_output_with_fine_and_coarse_segm_to_mask
 from rp_partition import RPPartitioner
 from rp_predict import RPPredictor
 from rp_predict.util import render_bbox
+from inference_model import ViTInferenceDetectron2
 
 from util.helper import display_imgs
 from util.myutil import tensor_to_list, predict_encoding_size
 
-class FlowControl:
-    """This class controls how Elf processes each video frame."""
+class ProcessingFlowControl:
+    """This class controls how ours approach processes each video frame."""
 
     def __init__(
         self,
@@ -61,17 +59,17 @@ class FlowControl:
         """
         self._register_new_frames(frame)
         bd = self._bandwidth_predictor()
-        print(f"Predicted Bandwidth is {bd} Mbps.")
-        if bd is None:
-            self._run_cold_start(frame)
-            return self._flow_data.inference_results[0]
+        # print(f"Predicted Bandwidth is {bd} Mbps.")
+        # if bd is None:
+        #     self._run_cold_start(frame)
+        #     return self._flow_data.inference_results[0]
 
         # -------------Edge Device ViT Inference-------------
-        predictions, attention_weights = self.inference_model.run()
+        predictions, attention_weights = self.inference_model.run(frame)
         self._flow_data.inference_results.append(predictions)
         # -------------PROCESSING BEFORE Transmission----------------
         # Step 1: Load bounding box and token importance
-        instances = predictions[0]['instances']
+        instances = predictions['instances']
         bboxes = tensor_to_list(instances.pred_boxes.tensor)
         scores = tensor_to_list(instances.scores)
 
@@ -154,27 +152,53 @@ class FlowControl:
                                                                                             col_start_idx:col_end_idx]
 
         # Step 5: Decide Transmit Configeration per Patch
-        n_patches = {k + 1: np.bincount(transfer_config.flatten(), minlength=3)[k] for k in range(3)}
-        best_combination, final_latency, meet_latency = self._qp_scheduler(bd, n_patches)
+        if self._config.fixed_qp_for_class is None:
+            n_patches = {k + 1: np.bincount(transfer_config.flatten(), minlength=3)[k] for k in range(3)}
+            best_combination, final_latency, meet_latency = self._qp_scheduler(bd, n_patches)
+            print(f"QP combination: {best_combination}, Predicted Latency: {final_latency}, Meet Latency: {meet_latency}")
+        else:
+            best_combination = self._config.fixed_qp_for_class
+            print(f"User set a fixed QP: {best_combination}")
+        # Step 6: Generate ROI Parameters
+        transfer_config = np.vectorize(lambda i: best_combination[i])(transfer_config)
+        blocks = []
+        for i in range(patch_num_col):
+            for j in range(patch_num_row):
+                y_start = j * patch_size
+                x_start = i * patch_size
+                patch = frame[x_start:x_start + patch_size, y_start:y_start + patch_size]
+                rate = transfer_config[i, j]
+                if rate == -1:
+                    continue
+                if rate > 1:
+                    downsampled_patch = cv2.resize(patch, (patch_size // rate, patch_size // rate),
+                                                   interpolation=cv2.INTER_AREA)
+                else:
+                    downsampled_patch = patch
 
+                avg_color = np.mean(downsampled_patch, axis=(0, 1))
+                blocks.append({"image": downsampled_patch, "w": patch_size // rate, "h": patch_size // rate,
+                               "color": avg_color})
 
+        # Sort patches by color consistency
+        blocks.sort(key=sort_key, reverse=True)
+
+        packer = GrowingPacker()
+        packer.fit(blocks)
+        # Create packed image
+        max_width, max_height = packer.root["w"], packer.root["h"]
+        packed_image = np.zeros((max_height, max_width, 3), dtype=np.uint8)
+        for block in blocks:
+            if "fit" in block and block["fit"]:
+                x, y = block["fit"]["x"], block["fit"]["y"]
+                packed_image[y:y + block["h"], x:x + block["w"]] = block["image"]
 
         if self.visualization_mode:
-            frame_with_box_render = render_bbox(predicted_rps.astype(int), self._flow_data.cur_frame)
-            frame_partition_coordinates = np.stack([rp_partition.coordinates for rp_partition in rp_partitions])
-            frame_with_box_render = render_bbox(
-                frame_partition_coordinates.astype(int),
-                frame_with_box_render,
-                color=(0, 255, 0),
-            )
-
-            display_imgs(frame_with_box_render,"Elf internal process (prediction + partitioning)", self._flow_data.frame_count)
-
-        # TODO: Update dynamic offloading
-        #offloading_partitions: List[np.ndarray] = schedule_offloading(frame_partitions)
+            display_imgs(packed_image,"Ours internal process (Transmitted Image)", self._flow_data.frame_count)
 
         # Sending Original High Resolution Frame
-        self._run_warm_up(frame, roi_param)
+        # self._run_warm_up(frame, roi_param)
+        self._run_cold_start(frame)
 
         device_predictions = self._flow_data.inference_results[0]
         cloud_predictions = self._flow_data.inference_results[1]
@@ -232,7 +256,6 @@ class FlowControl:
         inference_result = receive_inference_results(socket)
         self._flow_data.inference_results.append(inference_result)
 
-        self._update_inference_results()
 
     def _run_warm_up(
         self,
@@ -255,7 +278,6 @@ class FlowControl:
         inference_result = receive_inference_results(socket)
         self._flow_data.inference_results.append(inference_result)
 
-        self._update_inference_results()
 
     def _qp_scheduler(self, predicted_bandwidth):
         qp = self._config.qp_candidates
@@ -305,10 +327,11 @@ class FlowControl:
         )
 
     def _bandwidth_predictor(self) -> Optional[float]:
-        if len(self._flow_data.bandwidth_records) < 10:
+        if len(self._flow_data.bandwidth_records) < 1:
+            self._flow_data.bandwidth_records.append(50) # TODO: change to real bandwidth assessment
             return None
 
-        return np.mean([1 / x for x in self._flow_data.bandwidth_records[-10:]])
+        return np.mean([1 / x for x in self._flow_data.bandwidth_records[-3:]])
 
     def _weighted_ensembling(self, device_predictions, cloud_predictions):
         """
@@ -322,12 +345,8 @@ class FlowControl:
             np.ndarray: The combined predictions.
         """
         # Calculate the weights for the edge and cloud models
-        edge_weight = 1 / (1 + np.exp(-device_predictions[:, 4]))
-        cloud_weight = 1 / (1 + np.exp(-cloud_predictions[:, 4]))
-
-        # Normalize the weights
-        edge_weight = edge_weight / (edge_weight + cloud_weight)
-        cloud_weight = cloud_weight / (edge_weight + cloud_weight)
+        edge_weight = self._config.edge_model_weight
+        cloud_weight = self._config.cloud_model_weight
 
         # Calculate the weighted average of the bounding box coordinates
         x1 = edge_weight * device_predictions[:, 0] + cloud_weight * cloud_predictions[:, 0]
@@ -343,3 +362,4 @@ class FlowControl:
                                               axis=1)
 
         return combined_predictions
+

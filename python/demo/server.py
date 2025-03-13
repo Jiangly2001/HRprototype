@@ -16,7 +16,6 @@ if visualization_mode:
 
 
 def run(port: int):
-    # model = cloud_lat()
     model = ViTInferenceDetectron2()
     model.create_model()
     print("Model created.")

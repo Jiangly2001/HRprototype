@@ -14,9 +14,13 @@ class Config:
 
     latency_constraint = 400
 
-    qp_candidates = [0, 0.25, 0.5]
-
     classes = [0, 1, 2]
+
+    qp_candidates = [1, 2, 4]
+    fixed_qp_for_class = [4, 2, 1]
+
+    # qp_candidates = [0, 0.25, 0.5]
+    # fixed_qp_for_class = [0.0, 0.25, 0.5]
 
     edge_model_weight = 0.7
     cloud_model_weight = 0.3
@@ -34,7 +38,8 @@ class Config:
     """Video Frame resolution configuration."""
 
     # video_dataset_dir: str = r'F:\Datasets\gigapixel\image\PANDA_IMAGE\image_train_4k\01_University_Canteen'
-    video_dataset_dir: str = r'F:\Datasets\gigapixel\video\train\panda_video_4k\10_Huaqiangbei'
+    # video_dataset_dir: str = r'F:\Datasets\gigapixel\video\train\panda_video_4k\10_Huaqiangbei'
+    video_dataset_dir: str = r'F:\Datasets\gigapixel\video\train\panda_video_4k'
     # video_dataset_dir: str = r'F:\Datasets\gigapixel\image\PANDA_IMAGE\image_train_4k\09_Electronic_Market'
     # video_dataset_dir: str = r'F:\Datasets\gigapixel\image\PANDA_IMAGE\image_train_4k\02_Xili_Crossroad'
     # video_dataset_dir: str = r'F:\Datasets\gigapixel\video\train\panda_video_4k\08_Xili_Street_1'
@@ -74,7 +79,7 @@ class Config:
     rp_prediction_model: str = 'attn_lstm'
     """Selected model for RP rp_predict."""
 
-    rp_prediction_model_path: str = r'C:\Users\linyi\PycharmProjects\elf\python\rp_predict\model\outputs\attn_lstm_checkpoint25.pth'
+    rp_prediction_model_path: str = r'./rp_predict/model/outputs/attn_lstm_checkpoint25.pth'
     """Path to load RP rp_predict model."""
 
     rp_prediction_training_dataset_path: str = './rp_predict/data/train/'
@@ -89,7 +94,7 @@ class Config:
     frame_scale_ratio: int = 2
     """Dynamic scaling ratios of video frames"""
 
-    visualization_mode: bool = True
+    visualization_mode: bool = False
 
     """If the flag is set True, it shows the received frame and frame partitions."""
 
@@ -100,3 +105,4 @@ class Config:
 
     merge_mask: bool = True
     """Disable mask merge to lower Elf overheads."""
+

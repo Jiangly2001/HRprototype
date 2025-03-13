@@ -1,5 +1,7 @@
 import concurrent.futures
+import csv
 import random
+import zlib
 from typing import List, Any, Optional
 
 import gevent
@@ -7,13 +9,17 @@ import numpy as np
 from zmq.sugar.socket import Socket
 
 from networking import EncoderBase
+from PIL import Image
+import io
 
 
 def send_frame(
     socket: Socket,
     frame: np.ndarray,
     frame_encoder: EncoderBase,
+    file_path: str,
     roi_param: Optional[Any] = None,
+    csv_file_path: Optional[str] = r"F:\B\result\elf\encoded_frame_size.csv"
 ) -> None:
     """Encode a frame and send it to a remote socket."""
     if roi_param is None:
@@ -21,8 +27,28 @@ def send_frame(
     else:
         # Perform RoI encoding using roi_param
         encoded_frame = frame_encoder.encode(frame, roi_param)
-
+    # print(len(encoded_frame))
+    # compressed_data = zlib.compress(encoded_frame)  # 压缩后的数据
+    # print(len(compressed_data))
+    # quality = 75
+    # img = Image.fromarray(frame)
+    # img_bytes = io.BytesIO()
+    # img.save(img_bytes, format="JPEG", quality=quality)  # 设置 JPEG 质量
+    # compressed_data_jpeg = img_bytes.getvalue()
+    # print(len(compressed_data_jpeg))
+    quality = 100
+    img = Image.fromarray(frame)
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format="JPEG", quality=quality)  # 设置 JPEG 质量
+    compressed_data_jpeg = img_bytes.getvalue()
+    # print(len(compressed_data_jpeg))
+    # print(len(encoded_frame)/len(compressed_data_jpeg))
     socket.send(encoded_frame, copy=False)
+
+    # 将编码帧大小和文件路径保存到 CSV 文件
+    with open(csv_file_path, mode="a", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow([file_path, len(compressed_data_jpeg)])
     return None
 
 
@@ -31,6 +57,7 @@ def submit_offloading_tasks(
     frame_encoder: EncoderBase,
     sockets: List[Socket],
     executor: concurrent.futures.ThreadPoolExecutor,
+    file_path: str,
 ) -> List[concurrent.futures.Future]:
     """Submit offloading tasks to the connected sockets."""
     offloading_tasks = [
@@ -39,6 +66,7 @@ def submit_offloading_tasks(
             socket,
             frame,
             frame_encoder,
+            file_path,
         ) for frame, socket in zip(frames, sockets)
     ]
 

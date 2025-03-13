@@ -1,6 +1,8 @@
 from config import Config
-from flow import FlowControl
+from flow import ProcessingFlowControl
 from inference_model import InferenceModelDetectron2
+from inference_model import ViTInferenceDetectron2
+
 from util.helper import display_imgs
 from util.myutil import get_file_list
 
@@ -13,14 +15,14 @@ if __name__ == "__main__":
 
     files = get_file_list(config.video_dataset_dir, extensions=[".jpg", ".png"])
 
-    model = InferenceModelDetectron2()
+    model = ViTInferenceDetectron2()
     model.create_model()
     print("Model created.")
 
-    with FlowControl(config, model) as flow_control:
+    with ProcessingFlowControl(config, model) as processing_flow_control:
         for i, file in enumerate(files):
             img = cv2.imread(file)
-            inference_result = flow_control.run(img)
+            inference_result = processing_flow_control.run(img)
             render_img = model.render(img, inference_result)
 
             if config.visualization_mode:
